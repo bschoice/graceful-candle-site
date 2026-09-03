@@ -1,4 +1,4 @@
-name: Enhance Yuzuki candle image
+name: Repair and enhance Graceful Candle photos
 
 on:
   push:
@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 jobs:
-  enhance-image:
+  enhance-images:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -21,42 +21,78 @@ jobs:
           python-version: '3.11'
 
       - name: Install image tools
-        run: pip install opencv-python-headless pillow
+        run: pip install opencv-contrib-python-headless pillow
 
-      - name: Enhance Yuzuki image
+      - name: Download fast super-resolution model
+        run: curl -L --fail --retry 3 https://github.com/Saafke/FSRCNN_Tensorflow/raw/master/models/FSRCNN_x2.pb -o FSRCNN_x2.pb
+
+      - name: Repair and enhance images
         run: |
           python - <<'PY'
           import cv2
-          from PIL import Image, ImageFilter
+          from pathlib import Path
+          from PIL import Image, ImageFile, ImageFilter
 
-          source = 'graceful-candle-yuzuki.jpg'
-          image = cv2.imread(source, cv2.IMREAD_COLOR)
-          if image is None:
-              raise SystemExit(f'Could not read {source}')
+          ImageFile.LOAD_TRUNCATED_IMAGES = True
 
-          # Smooth JPEG/block artifacts while keeping candle edges and plant details.
-          cleaned = cv2.bilateralFilter(image, 7, 28, 28)
-          cleaned = cv2.fastNlMeansDenoisingColored(cleaned, None, 2, 2, 7, 19)
-          cleaned = cv2.cvtColor(cleaned, cv2.COLOR_BGR2RGB)
+          jobs = [
+              ('graceful-candle-artist-makiko.jpg', 'graceful-candle-artist-makiko-hq.jpg', (1170, 1306)),
+              ('graceful-candle-yuzuki.jpg', 'graceful-candle-yuzuki-hq.jpg', (1086, 1448)),
+              ('graceful-candle-botanical.jpg', 'graceful-candle-botanical-hq.jpg', (1146, 1319)),
+          ]
 
-          result = Image.fromarray(cleaned)
-          result = result.resize((1086, 1448), Image.Resampling.LANCZOS)
-          result = result.filter(ImageFilter.UnsharpMask(radius=1.0, percent=85, threshold=2))
-          result.save(source, 'JPEG', quality=95, subsampling=0, optimize=True)
-          print('Saved enhanced image:', result.size)
+          sr = cv2.dnn_superres.DnnSuperResImpl_create()
+          sr.readModel('FSRCNN_x2.pb')
+          sr.setModel('fsrcnn', 2)
+
+          for source, output, target_size in jobs:
+              print('Processing', source, 'bytes=', Path(source).stat().st_size)
+              image = cv2.imread(source, cv2.IMREAD_COLOR)
+
+              # If OpenCV dislikes a slightly damaged JPEG, let Pillow repair it first.
+              if image is None:
+                  repaired = Image.open(source).convert('RGB')
+                  repaired.save('/tmp/repaired.jpg', 'JPEG', quality=95, subsampling=0)
+                  image = cv2.imread('/tmp/repaired.jpg', cv2.IMREAD_COLOR)
+              if image is None:
+                  raise SystemExit(f'Could not decode {source}')
+
+              # Reduce compression blocks without smearing edges too strongly.
+              cleaned = cv2.bilateralFilter(image, 5, 20, 20)
+              cleaned = cv2.fastNlMeansDenoisingColored(cleaned, None, 1.5, 1.5, 7, 17)
+
+              # Fast learned super-resolution. Resize back to the original requested dimensions.
+              enlarged = sr.upsample(cleaned)
+              enlarged = cv2.cvtColor(enlarged, cv2.COLOR_BGR2RGB)
+              result = Image.fromarray(enlarged)
+              result = result.resize(target_size, Image.Resampling.LANCZOS)
+              result = result.filter(ImageFilter.UnsharpMask(radius=0.8, percent=75, threshold=2))
+              result.save(output, 'JPEG', quality=96, subsampling=0, optimize=True)
+              print('Saved', output, result.size, 'bytes=', Path(output).stat().st_size)
           PY
 
-      - name: Commit enhanced image
+      - name: Switch site to repaired image filenames
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('./graceful-candle-artist-makiko.jpg', './graceful-candle-artist-makiko-hq.jpg?v=4')
+          s = s.replace('./graceful-candle-yuzuki.jpg?v=3', './graceful-candle-yuzuki-hq.jpg?v=4')
+          s = s.replace('./graceful-candle-yuzuki.jpg', './graceful-candle-yuzuki-hq.jpg?v=4')
+          s = s.replace('./graceful-candle-botanical.jpg', './graceful-candle-botanical-hq.jpg?v=4')
+          p.write_text(s, encoding='utf-8')
+          PY
+
+      - name: Commit repaired images
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add graceful-candle-yuzuki.jpg
+          git add index.html graceful-candle-artist-makiko-hq.jpg graceful-candle-yuzuki-hq.jpg graceful-candle-botanical-hq.jpg
           if git diff --cached --quiet; then
             echo "No image changes to commit."
           else
-            git commit -m "Improve Yuzuki candle image quality"
+            git commit -m "Repair and enhance Graceful Candle photos"
             git pull --rebase origin main
             git push
           fi
-
-# Fast web-quality enhancement workflow.
