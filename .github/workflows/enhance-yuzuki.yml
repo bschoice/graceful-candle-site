@@ -66,3 +66,5 @@ jobs:
             git commit -m "Enhance Yuzuki candle image"
             git push
           fi
+
+# Updated to trigger the enhancement workflow.
