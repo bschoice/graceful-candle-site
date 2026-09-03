@@ -20,6 +20,12 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeMenu();
 });
 
+// Force browsers to fetch the newly enhanced Yuzuki product photo instead of a cached low-quality copy.
+const yuzukiImage = document.querySelector('img[alt="優月キャンドル"]');
+if (yuzukiImage) {
+  yuzukiImage.src = './graceful-candle-yuzuki.jpg?v=20260903-hq2';
+}
+
 // Replace the botanical candle placeholder artwork with the actual product photo.
 const botanicalVisual = document.querySelector('.visual-botanical');
 if (botanicalVisual) {
