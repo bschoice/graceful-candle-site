@@ -21,10 +21,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install image tools
-        run: pip install opencv-contrib-python-headless pillow
-
-      - name: Download EDSR super-resolution model
-        run: curl -L --fail --retry 3 https://github.com/Saafke/EDSR_Tensorflow/raw/master/models/EDSR_x4.pb -o EDSR_x4.pb
+        run: pip install opencv-python-headless pillow
 
       - name: Enhance Yuzuki image
         run: |
@@ -37,20 +34,14 @@ jobs:
           if image is None:
               raise SystemExit(f'Could not read {source}')
 
-          # Reduce visible JPEG/block artifacts before super-resolution.
-          cleaned = cv2.fastNlMeansDenoisingColored(image, None, 3, 3, 7, 21)
+          # Smooth JPEG/block artifacts while keeping candle edges and plant details.
+          cleaned = cv2.bilateralFilter(image, 7, 28, 28)
+          cleaned = cv2.fastNlMeansDenoisingColored(cleaned, None, 2, 2, 7, 19)
+          cleaned = cv2.cvtColor(cleaned, cv2.COLOR_BGR2RGB)
 
-          sr = cv2.dnn_superres.DnnSuperResImpl_create()
-          sr.readModel('EDSR_x4.pb')
-          sr.setModel('edsr', 4)
-          enlarged = sr.upsample(cleaned)
-
-          # Restore the original portrait aspect ratio at a useful web resolution.
-          target = cv2.resize(enlarged, (1086, 1448), interpolation=cv2.INTER_AREA)
-          target = cv2.cvtColor(target, cv2.COLOR_BGR2RGB)
-
-          result = Image.fromarray(target)
-          result = result.filter(ImageFilter.UnsharpMask(radius=1.1, percent=90, threshold=2))
+          result = Image.fromarray(cleaned)
+          result = result.resize((1086, 1448), Image.Resampling.LANCZOS)
+          result = result.filter(ImageFilter.UnsharpMask(radius=1.0, percent=85, threshold=2))
           result.save(source, 'JPEG', quality=95, subsampling=0, optimize=True)
           print('Saved enhanced image:', result.size)
           PY
@@ -63,8 +54,9 @@ jobs:
           if git diff --cached --quiet; then
             echo "No image changes to commit."
           else
-            git commit -m "Enhance Yuzuki candle image"
+            git commit -m "Improve Yuzuki candle image quality"
+            git pull --rebase origin main
             git push
           fi
 
-# Updated to trigger the enhancement workflow.
+# Fast web-quality enhancement workflow.
