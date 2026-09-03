@@ -1,0 +1,68 @@
+name: Enhance Yuzuki candle image
+
+on:
+  push:
+    paths:
+      - '.github/workflows/enhance-yuzuki.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  enhance-image:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install image tools
+        run: pip install opencv-contrib-python-headless pillow
+
+      - name: Download EDSR super-resolution model
+        run: curl -L --fail --retry 3 https://github.com/Saafke/EDSR_Tensorflow/raw/master/models/EDSR_x4.pb -o EDSR_x4.pb
+
+      - name: Enhance Yuzuki image
+        run: |
+          python - <<'PY'
+          import cv2
+          from PIL import Image, ImageFilter
+
+          source = 'graceful-candle-yuzuki.jpg'
+          image = cv2.imread(source, cv2.IMREAD_COLOR)
+          if image is None:
+              raise SystemExit(f'Could not read {source}')
+
+          # Reduce visible JPEG/block artifacts before super-resolution.
+          cleaned = cv2.fastNlMeansDenoisingColored(image, None, 3, 3, 7, 21)
+
+          sr = cv2.dnn_superres.DnnSuperResImpl_create()
+          sr.readModel('EDSR_x4.pb')
+          sr.setModel('edsr', 4)
+          enlarged = sr.upsample(cleaned)
+
+          # Restore the original portrait aspect ratio at a useful web resolution.
+          target = cv2.resize(enlarged, (1086, 1448), interpolation=cv2.INTER_AREA)
+          target = cv2.cvtColor(target, cv2.COLOR_BGR2RGB)
+
+          result = Image.fromarray(target)
+          result = result.filter(ImageFilter.UnsharpMask(radius=1.1, percent=90, threshold=2))
+          result.save(source, 'JPEG', quality=95, subsampling=0, optimize=True)
+          print('Saved enhanced image:', result.size)
+          PY
+
+      - name: Commit enhanced image
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add graceful-candle-yuzuki.jpg
+          if git diff --cached --quiet; then
+            echo "No image changes to commit."
+          else
+            git commit -m "Enhance Yuzuki candle image"
+            git push
+          fi
