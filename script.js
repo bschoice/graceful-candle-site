@@ -20,6 +20,23 @@ document.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') closeMenu();
 });
 
+// Replace the botanical candle placeholder artwork with the actual product photo.
+const botanicalVisual = document.querySelector('.visual-botanical');
+if (botanicalVisual) {
+  const botanicalImage = document.createElement('img');
+  botanicalImage.src = './graceful-candle-botanical.jpg';
+  botanicalImage.alt = '花を閉じ込めたボタニカルキャンドル';
+  botanicalImage.loading = 'lazy';
+  botanicalImage.style.width = '100%';
+  botanicalImage.style.height = '100%';
+  botanicalImage.style.objectFit = 'cover';
+  botanicalImage.style.objectPosition = 'center center';
+  botanicalImage.style.display = 'block';
+  botanicalVisual.replaceChildren(botanicalImage);
+  botanicalVisual.removeAttribute('role');
+  botanicalVisual.removeAttribute('aria-label');
+}
+
 // Add a quiet header background after the hero starts to scroll away.
 const header = document.querySelector('.site-header');
 const updateHeader = () => header.classList.toggle('scrolled', window.scrollY > 24);
