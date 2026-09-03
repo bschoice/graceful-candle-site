@@ -1,4 +1,4 @@
-name: Repair and enhance Graceful Candle photos
+name: Repair Graceful Candle photos
 
 on:
   push:
@@ -26,19 +26,16 @@ jobs:
       - name: Download fast super-resolution model
         run: curl -L --fail --retry 3 https://github.com/Saafke/FSRCNN_Tensorflow/raw/master/models/FSRCNN_x2.pb -o FSRCNN_x2.pb
 
-      - name: Repair and enhance images
+      - name: Enhance artist and Yuzuki images
         run: |
           python - <<'PY'
           import cv2
           from pathlib import Path
-          from PIL import Image, ImageFile, ImageFilter
-
-          ImageFile.LOAD_TRUNCATED_IMAGES = True
+          from PIL import Image, ImageFilter
 
           jobs = [
               ('graceful-candle-artist-makiko.jpg', 'graceful-candle-artist-makiko-hq.jpg', (1170, 1306)),
               ('graceful-candle-yuzuki.jpg', 'graceful-candle-yuzuki-hq.jpg', (1086, 1448)),
-              ('graceful-candle-botanical.jpg', 'graceful-candle-botanical-hq.jpg', (1146, 1319)),
           ]
 
           sr = cv2.dnn_superres.DnnSuperResImpl_create()
@@ -48,20 +45,10 @@ jobs:
           for source, output, target_size in jobs:
               print('Processing', source, 'bytes=', Path(source).stat().st_size)
               image = cv2.imread(source, cv2.IMREAD_COLOR)
-
-              # If OpenCV dislikes a slightly damaged JPEG, let Pillow repair it first.
-              if image is None:
-                  repaired = Image.open(source).convert('RGB')
-                  repaired.save('/tmp/repaired.jpg', 'JPEG', quality=95, subsampling=0)
-                  image = cv2.imread('/tmp/repaired.jpg', cv2.IMREAD_COLOR)
               if image is None:
                   raise SystemExit(f'Could not decode {source}')
-
-              # Reduce compression blocks without smearing edges too strongly.
               cleaned = cv2.bilateralFilter(image, 5, 20, 20)
               cleaned = cv2.fastNlMeansDenoisingColored(cleaned, None, 1.5, 1.5, 7, 17)
-
-              # Fast learned super-resolution. Resize back to the original requested dimensions.
               enlarged = sr.upsample(cleaned)
               enlarged = cv2.cvtColor(enlarged, cv2.COLOR_BGR2RGB)
               result = Image.fromarray(enlarged)
@@ -71,16 +58,18 @@ jobs:
               print('Saved', output, result.size, 'bytes=', Path(output).stat().st_size)
           PY
 
-      - name: Switch site to repaired image filenames
+      - name: Switch site to repaired filenames
         run: |
           python - <<'PY'
           from pathlib import Path
           p = Path('index.html')
           s = p.read_text(encoding='utf-8')
-          s = s.replace('./graceful-candle-artist-makiko.jpg', './graceful-candle-artist-makiko-hq.jpg?v=4')
-          s = s.replace('./graceful-candle-yuzuki.jpg?v=3', './graceful-candle-yuzuki-hq.jpg?v=4')
-          s = s.replace('./graceful-candle-yuzuki.jpg', './graceful-candle-yuzuki-hq.jpg?v=4')
-          s = s.replace('./graceful-candle-botanical.jpg', './graceful-candle-botanical-hq.jpg?v=4')
+          for old in ['./graceful-candle-artist-makiko.jpg', './graceful-candle-artist-makiko-hq.jpg?v=4']:
+              s = s.replace(old, './graceful-candle-artist-makiko-hq.jpg?v=5')
+          for old in ['./graceful-candle-yuzuki.jpg?v=3', './graceful-candle-yuzuki.jpg', './graceful-candle-yuzuki-hq.jpg?v=4']:
+              s = s.replace(old, './graceful-candle-yuzuki-hq.jpg?v=5')
+          for old in ['./graceful-candle-botanical.jpg', './graceful-candle-botanical-hq.jpg?v=4']:
+              s = s.replace(old, './graceful-candle-botanical-hq.jpg?v=5')
           p.write_text(s, encoding='utf-8')
           PY
 
@@ -88,11 +77,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html graceful-candle-artist-makiko-hq.jpg graceful-candle-yuzuki-hq.jpg graceful-candle-botanical-hq.jpg
+          git add index.html graceful-candle-artist-makiko-hq.jpg graceful-candle-yuzuki-hq.jpg
           if git diff --cached --quiet; then
             echo "No image changes to commit."
           else
-            git commit -m "Repair and enhance Graceful Candle photos"
+            git commit -m "Repair Graceful Candle artist and Yuzuki photos"
             git pull --rebase origin main
             git push
           fi
